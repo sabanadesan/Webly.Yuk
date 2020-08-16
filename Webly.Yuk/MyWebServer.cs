@@ -71,7 +71,7 @@ namespace Webly.Yuk
                     }
 
                     if (isContinue)
-                        doRequest(sBuffer, mySocket);
+                        doRequest(sBuffer, ref mySocket);
 
                     try
                     {
@@ -91,7 +91,7 @@ namespace Webly.Yuk
             }  
         }
 
-        private Boolean doRequest(string sBuffer, Socket mySocket)
+        private Boolean doRequest(string sBuffer, ref Socket mySocket)
         {
             int iStartPos = 0;
             String sRequest;
@@ -148,7 +148,7 @@ namespace Webly.Yuk
                 SendHeader(sHttpVersion, "", sErrorMessage.Length, " 404 Not Found", ref mySocket);
                 //Send to the browser  
                 SendToBrowser(sErrorMessage, ref mySocket);
-                mySocket.Close();
+                //mySocket.Close();
                 return false;
             }
 
@@ -166,7 +166,7 @@ namespace Webly.Yuk
                     SendHeader(sHttpVersion, "", sErrorMessage.Length, " 404 Not Found",
                     ref mySocket);
                     SendToBrowser(sErrorMessage, ref mySocket);
-                    mySocket.Close();
+                    //mySocket.Close();
                     return false;
                 }
             }

@@ -28,7 +28,7 @@ namespace Webly.Yuk
 
                 //start listing on the given port  
                 myListener = new TcpListener(iIPAddress, port);
-                myListener.Start();
+                
                 Console.WriteLine("Web Server Running... Press ^C to Stop...");
                 //start the thread which calls the method 'StartListen'  
                 Thread th = new Thread(new ThreadStart(StartListen));
@@ -45,10 +45,13 @@ namespace Webly.Yuk
 
 
             while (true)  
-            {  
+            {
+                myListener.Start();
+
                 //Accept a new connection  
-                Socket mySocket = myListener.AcceptSocket();  
-                Console.WriteLine("Socket Type " + mySocket.SocketType);
+                Socket mySocket = myListener.AcceptSocket();
+
+                Console.WriteLine("\nSocket Type " + mySocket.SocketType);
                 
                 if (mySocket.Connected)  
                 {
@@ -70,8 +73,21 @@ namespace Webly.Yuk
                     if (isContinue)
                         doRequest(sBuffer, mySocket);
 
-                    mySocket.Close();
-                }  
+                    try
+                    {
+                        mySocket.Shutdown(SocketShutdown.Both);
+                    }
+                    finally
+                    {
+                        mySocket.Close();
+                        myListener.Stop();
+                    }
+                }
+
+                if (mySocket.Connected)
+                    Console.WriteLine("We're still connnected");
+                else
+                    Console.WriteLine("We're disconnected");
             }  
         }
 

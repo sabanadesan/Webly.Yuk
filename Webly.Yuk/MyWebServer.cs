@@ -6,6 +6,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Runtime.InteropServices;
 
 namespace Webly.Yuk
 {
@@ -41,24 +42,18 @@ namespace Webly.Yuk
 
         public void StartListen()  
         {  
-            int iStartPos = 0;  
-            String sRequest;  
-            String sDirName;  
-            String sRequestedFile;  
-            String sErrorMessage;  
-            String sLocalDir;  
-           
-            String sPhysicalFilePath = "";  
-            String sFormattedMessage = "";  
-            String sResponse = "";  
+
 
             while (true)  
             {  
                 //Accept a new connection  
                 Socket mySocket = myListener.AcceptSocket();  
-                Console.WriteLine("Socket Type " + mySocket.SocketType);  
+                Console.WriteLine("Socket Type " + mySocket.SocketType);
+                
                 if (mySocket.Connected)  
-                {  
+                {
+                    Boolean isContinue = true;
+
                     Console.WriteLine("\nClient Connected!!\n==================\n CLient IP {0}\n", mySocket.RemoteEndPoint);  
                     //make a byte array and receive data from the client   
                     Byte[] bReceive = new Byte[1024];  
@@ -68,116 +63,136 @@ namespace Webly.Yuk
                     //At present we will only deal with GET type  
                     if (sBuffer.Substring(0, 3) != "GET")  
                     {  
-                        Console.WriteLine("Only Get Method is supported..");  
-                        mySocket.Close();  
-                        return;  
-                    }  
-                    // Look for HTTP request  
-                    iStartPos = sBuffer.IndexOf("HTTP", 1);  
-                    // Get the HTTP text and version e.g. it will return "HTTP/1.1"  
-                    string sHttpVersion = sBuffer.Substring(iStartPos, 8);  
-                    // Extract the Requested Type and Requested file/directory  
-                    sRequest = sBuffer.Substring(0, iStartPos - 1);  
-                    //Replace backslash with Forward Slash, if Any  
-                    sRequest.Replace("\\", "/");  
-                    //If file name is not supplied add forward slash to indicate   
-                    //that it is a directory and then we will look for the   
-                    //default file name..  
-                    if ((sRequest.IndexOf(".") < 1) && (!sRequest.EndsWith("/")))  
-                    {  
-                        sRequest = sRequest + "/";  
-                    }  
-                    //Extract the requested file name  
-                    iStartPos = sRequest.LastIndexOf("/") + 1;  
-                    sRequestedFile = sRequest.Substring(iStartPos);  
-                    //Extract The directory Name  
-                    sDirName = sRequest.Substring(sRequest.IndexOf("/"), sRequest.LastIndexOf("/") - 3);
-
-                    /////////////////////////////////////////////////////////////////////  
-                    // Identify the Physical Directory  
-                    /////////////////////////////////////////////////////////////////////  
-
-                    //Get the Virtual Directory
-                    if (sDirName == "/")
-                    {
-                        sDirName = "";
+                        Console.WriteLine("Only Get Method is supported..");
+                        isContinue = false;
                     }
 
-                    sLocalDir = GetLocalPath(sDirName);
-              
-                    Console.WriteLine("Directory Requested : " + sLocalDir);
-                    //If the physical directory does not exists then  
-                    // dispaly the error message  
-                    if (sLocalDir.Length == 0)
-                    {
-                        sErrorMessage = "<H2>Error!! Requested Directory does not exists</H2><Br>";
-                        //sErrorMessage = sErrorMessage + "Please check data\\Vdirs.Dat";  
-                        //Format The Message  
-                        SendHeader(sHttpVersion, "", sErrorMessage.Length, " 404 Not Found", ref mySocket);
-                        //Send to the browser  
-                        SendToBrowser(sErrorMessage, ref mySocket);
-                        mySocket.Close();
-                        continue;
-                    }
+                    if (isContinue)
+                        doRequest(sBuffer, mySocket);
 
-                    /////////////////////////////////////////////////////////////////////  
-                    // Identify the File Name  
-                    /////////////////////////////////////////////////////////////////////  
-                    //If The file name is not supplied then look in the default file list  
-                    if (sRequestedFile.Length == 0)
-                    {
-                        // Get the default filename  
-                        sRequestedFile = GetTheDefaultFileName(sLocalDir);
-                        if (sRequestedFile == "")
-                        {
-                            sErrorMessage = "<H2>Error!! No Default File Name Specified</H2>";
-                            SendHeader(sHttpVersion, "", sErrorMessage.Length, " 404 Not Found",
-                            ref mySocket);
-                            SendToBrowser(sErrorMessage, ref mySocket);
-                            mySocket.Close();
-                            return;
-                        }
-                    }
-
-                    /////////////////////////////////////////////////////////////////////  
-                    // Get TheMime Type  
-                    /////////////////////////////////////////////////////////////////////  
-                    String sMimeType = GetMimeType(sRequestedFile);
-                    //Build the physical path  
-                    sPhysicalFilePath = Path.Combine(sLocalDir,sRequestedFile);
-                    Console.WriteLine("File Requested : " + sPhysicalFilePath);
-
-                    if (File.Exists(sPhysicalFilePath) == false)
-                    {
-                        sErrorMessage = "<H2>404 Error! File Does Not Exists...</H2>";
-                        SendHeader(sHttpVersion, "", sErrorMessage.Length, " 404 Not Found", ref mySocket);
-                        SendToBrowser(sErrorMessage, ref mySocket);
-                        Console.WriteLine(sFormattedMessage);
-                    }
-                    else
-                    {
-                        int iTotBytes = 0;
-                        sResponse = "";
-                        FileStream fs = new FileStream(sPhysicalFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                        // Create a reader that can read bytes from the FileStream.  
-                        BinaryReader reader = new BinaryReader(fs);
-                        byte[] bytes = new byte[fs.Length];
-                        int read;
-                        while ((read = reader.Read(bytes, 0, bytes.Length)) != 0)
-                        {
-                            // Read from the file and write the data to the network  
-                            sResponse = sResponse + Encoding.ASCII.GetString(bytes, 0, read);
-                            iTotBytes = iTotBytes + read;
-                        }
-                        reader.Close();
-                        fs.Close();
-                        SendHeader(sHttpVersion, sMimeType, iTotBytes, " 200 OK", ref mySocket);
-                        SendToBrowser(bytes, ref mySocket);
-                        //mySocket.Send(bytes, bytes.Length,0);  
-                    }
                     mySocket.Close();
                 }  
             }  
+        }
+
+        private Boolean doRequest(string sBuffer, Socket mySocket)
+        {
+            int iStartPos = 0;
+            String sRequest;
+            String sDirName;
+            String sRequestedFile;
+            String sErrorMessage;
+            String sLocalDir;
+
+            String sPhysicalFilePath = "";
+            String sFormattedMessage = "";
+            String sResponse = "";
+
+            // Look for HTTP request  
+            iStartPos = sBuffer.IndexOf("HTTP", 1);
+            // Get the HTTP text and version e.g. it will return "HTTP/1.1"  
+            string sHttpVersion = sBuffer.Substring(iStartPos, 8);
+            // Extract the Requested Type and Requested file/directory  
+            sRequest = sBuffer.Substring(0, iStartPos - 1);
+            //Replace backslash with Forward Slash, if Any  
+            sRequest.Replace("\\", "/");
+            //If file name is not supplied add forward slash to indicate   
+            //that it is a directory and then we will look for the   
+            //default file name..  
+            if ((sRequest.IndexOf(".") < 1) && (!sRequest.EndsWith("/")))
+            {
+                sRequest = sRequest + "/";
+            }
+            //Extract the requested file name  
+            iStartPos = sRequest.LastIndexOf("/") + 1;
+            sRequestedFile = sRequest.Substring(iStartPos);
+            //Extract The directory Name  
+            sDirName = sRequest.Substring(sRequest.IndexOf("/"), sRequest.LastIndexOf("/") - 3);
+
+            /////////////////////////////////////////////////////////////////////  
+            // Identify the Physical Directory  
+            /////////////////////////////////////////////////////////////////////  
+
+            //Get the Virtual Directory
+            if (sDirName == "/")
+            {
+                sDirName = "";
+            }
+
+            sLocalDir = GetLocalPath(sDirName);
+
+            Console.WriteLine("Directory Requested : " + sLocalDir);
+            //If the physical directory does not exists then  
+            // dispaly the error message  
+            if (sLocalDir.Length == 0)
+            {
+                sErrorMessage = "<H2>Error!! Requested Directory does not exists</H2><Br>";
+                //sErrorMessage = sErrorMessage + "Please check data\\Vdirs.Dat";  
+                //Format The Message  
+                SendHeader(sHttpVersion, "", sErrorMessage.Length, " 404 Not Found", ref mySocket);
+                //Send to the browser  
+                SendToBrowser(sErrorMessage, ref mySocket);
+                mySocket.Close();
+                return false;
+            }
+
+            /////////////////////////////////////////////////////////////////////  
+            // Identify the File Name  
+            /////////////////////////////////////////////////////////////////////  
+            //If The file name is not supplied then look in the default file list  
+            if (sRequestedFile.Length == 0)
+            {
+                // Get the default filename  
+                sRequestedFile = GetTheDefaultFileName(sLocalDir);
+                if (sRequestedFile == "")
+                {
+                    sErrorMessage = "<H2>Error!! No Default File Name Specified</H2>";
+                    SendHeader(sHttpVersion, "", sErrorMessage.Length, " 404 Not Found",
+                    ref mySocket);
+                    SendToBrowser(sErrorMessage, ref mySocket);
+                    mySocket.Close();
+                    return false;
+                }
+            }
+
+            /////////////////////////////////////////////////////////////////////  
+            // Get TheMime Type  
+            /////////////////////////////////////////////////////////////////////  
+            String sMimeType = GetMimeType(sRequestedFile);
+            //Build the physical path  
+            sPhysicalFilePath = Path.Combine(sLocalDir, sRequestedFile);
+            Console.WriteLine("File Requested : " + sPhysicalFilePath);
+
+            if (File.Exists(sPhysicalFilePath) == false)
+            {
+                sErrorMessage = "<H2>404 Error! File Does Not Exists...</H2>";
+                SendHeader(sHttpVersion, "", sErrorMessage.Length, " 404 Not Found", ref mySocket);
+                SendToBrowser(sErrorMessage, ref mySocket);
+                Console.WriteLine(sFormattedMessage);
+            }
+            else
+            {
+                int iTotBytes = 0;
+                sResponse = "";
+                FileStream fs = new FileStream(sPhysicalFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                // Create a reader that can read bytes from the FileStream.  
+                BinaryReader reader = new BinaryReader(fs);
+                byte[] bytes = new byte[fs.Length];
+                int read;
+                while ((read = reader.Read(bytes, 0, bytes.Length)) != 0)
+                {
+                    // Read from the file and write the data to the network  
+                    sResponse = sResponse + Encoding.ASCII.GetString(bytes, 0, read);
+                    iTotBytes = iTotBytes + read;
+                }
+                reader.Close();
+                fs.Close();
+                SendHeader(sHttpVersion, sMimeType, iTotBytes, " 200 OK", ref mySocket);
+                SendToBrowser(bytes, ref mySocket);
+                //mySocket.Send(bytes, bytes.Length,0);  
+            }
+
+            return true;
         }
 
         public String GetAbsolutePath()
